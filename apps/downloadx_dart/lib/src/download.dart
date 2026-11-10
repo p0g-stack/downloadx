@@ -635,13 +635,14 @@ class Download implements GlobalConfig {
           isSegment ? (snap.targetFilePath ?? partFilePath) : partFilePath,
       offset: snap.offset,
       length: snap.length,
+      totalSize: isSegment ? null : _probe?.totalSize,
       initialDownloadedBytes: snap.downloadedBytes,
       acceptsRanges: isSegment ? false : acceptsRanges,
       isSegment: isSegment,
       uri: isSegment ? snap.uri : null,
       durationSec: isSegment ? snap.durationSec?.toDouble() : null,
-      etag: _probe?.etag,
-      lastModified: _probe?.lastModified,
+      etag: isSegment ? null : _probe?.etag,
+      lastModified: isSegment ? null : _probe?.lastModified,
       global: this,
       emitter: emitter,
       throttle: (bytes, signal) async {
@@ -1083,7 +1084,7 @@ class Download implements GlobalConfig {
       if (_chunks.isNotEmpty) _meta.chunks = getChunkSnapshots();
       await persistMeta(io, MetaLocator(dir: cachePath, id: id), _meta);
     });
-    _metaTail = result.then<void>((_) {}, onError: (Object _, StackTrace _) {});
+    _metaTail = result.then<void>((_) {}, onError: (Object error, StackTrace stack) {});
     return result;
   }
 

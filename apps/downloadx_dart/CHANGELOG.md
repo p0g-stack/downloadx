@@ -1,3 +1,12 @@
+## Unreleased
+
+- Keep split IDs unique when restoring sparse/custom numeric chunk IDs.
+- Persist in-flight chunk progress periodically (`metaPersistInterval`, default
+  1000 ms, 0 to disable), serializing metadata write-and-rename operations.
+- Retry finite chunks on early EOF rather than marking incomplete data complete.
+- Validate response Content-Range, total length, Content-Length and pinned strong
+  ETag before writing; do not apply playlist validators to HLS segment resources.
+
 ## 0.3.0
 
 - **HLS unified into the chunk pipeline.** Each HLS segment is now downloaded as

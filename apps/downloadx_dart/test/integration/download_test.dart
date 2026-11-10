@@ -212,10 +212,8 @@ void main() {
 
     test('size mismatch is rejected before rename', () async {
       // Lying server: advertises 1000 bytes, no range support, but the body is
-      // only 500. The chunk streams to EOF and the final fileSize check catches
-      // the shortfall before the part file is renamed into place. Pre-allocation
-      // is disabled so the part file is exactly the bytes written (otherwise
-      // prealloc would zero-fill to the advertised size and hide the shortfall).
+      // only 500. Early EOF now fails/retries the chunk before finalization,
+      // including when pre-allocation would hide the shortfall on disk.
       final body = deterministicBytes(500);
       final io = MockIo(enableTruncate: false);
       final h = await Harness.create(io: io);

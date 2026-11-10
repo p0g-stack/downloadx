@@ -29,6 +29,9 @@ class ChunkParams {
   /// Number of bytes this chunk is responsible for.
   final int length;
 
+  /// Immutable resource length, when known from the probe.
+  final int? totalSize;
+
   /// Bytes already written from a previous session (resume).
   final int initialDownloadedBytes;
   final bool acceptsRanges;
@@ -70,6 +73,7 @@ class ChunkParams {
     required this.targetFilePath,
     required this.offset,
     required this.length,
+    this.totalSize,
     required this.initialDownloadedBytes,
     required this.acceptsRanges,
     this.etag,
@@ -313,10 +317,11 @@ class Chunk {
       final headers = <String, String>{..._params.global.headers};
       var rangeSent = false;
       final openEnded = _length == unknownSizeLength;
+      final rangeEnd = openEnded ? null : offset + _length - 1;
       if (_params.acceptsRanges) {
         headers['Range'] = openEnded
             ? 'bytes=$rangeStart-'
-            : 'bytes=$rangeStart-${offset + _length - 1}';
+            : 'bytes=$rangeStart-$rangeEnd';
         rangeSent = true;
         final validator = _params.etag ?? _params.lastModified;
         if (validator != null) {
@@ -332,14 +337,19 @@ class Chunk {
         controller,
       );
       clearIdle();
-      if (!res.ok) {
-        throw HttpStatusError(res.status, res.statusText);
-      }
-      // A 200 on a ranged request means the server (or an If-Range mismatch)
-      // ignored the range — consuming it would write the whole file at this
-      // chunk's offset. The only safe 200 is an open-ended request from 0.
-      if (rangeSent && res.status != 206 && !(openEnded && rangeStart == 0)) {
-        throw RangeNotHonoredError();
+      try {
+        if (!res.ok) {
+          throw HttpStatusError(res.status, res.statusText);
+        }
+        // A 200 on a ranged request would place the whole file at this
+        // chunk's offset. Only an open-ended request from zero can accept it.
+        if (rangeSent && res.status != 206 && !(openEnded && rangeStart == 0)) {
+          throw RangeNotHonoredError();
+        }
+        _validateResponse(res, rangeStart, rangeEnd, rangeSent);
+      } catch (_) {
+        await res.body?.listen(null).cancel();
+        rethrow;
       }
       await _consumeBody(res, controller, armIdle, clearIdle);
       if (_status == ChunkStatus.downloading &&
@@ -349,6 +359,36 @@ class Chunk {
       }
     } finally {
       clearIdle();
+    }
+  }
+
+  void _validateResponse(FetchResponse response, int start, int? end, bool rangeSent) {
+    final expectedEtag = _params.etag;
+    if (expectedEtag != null && !expectedEtag.toLowerCase().startsWith('w/')) {
+      if (response.headers.get('etag') != expectedEtag) {
+        throw StateError('response ETag changed or is missing');
+      }
+    }
+    int? responseLength = end == null ? null : end - start + 1;
+    if (rangeSent && response.status == 206) {
+      final value = response.headers.get('content-range');
+      final match = value == null ? null : RegExp(r'^bytes\s+(\d+)-(\d+)/(\d+)$',
+          caseSensitive: false).firstMatch(value.trim());
+      if (match == null) throw StateError('missing or invalid Content-Range');
+      final actualStart = int.tryParse(match.group(1)!);
+      final actualEnd = int.tryParse(match.group(2)!);
+      final total = int.tryParse(match.group(3)!);
+      if (actualStart != start || actualEnd == null || actualEnd < start ||
+          (end != null && actualEnd != end) || total == null || total <= actualEnd ||
+          (_params.totalSize != null && total != _params.totalSize)) {
+        throw StateError('Content-Range does not match the requested resource range');
+      }
+      responseLength = actualEnd - start + 1;
+    }
+    final lengthHeader = response.headers.get('content-length');
+    if (lengthHeader != null && responseLength != null &&
+        int.tryParse(lengthHeader) != responseLength) {
+      throw StateError('Content-Length does not match the requested range');
     }
   }
 
