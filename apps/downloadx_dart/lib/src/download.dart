@@ -608,7 +608,14 @@ class Download implements GlobalConfig {
     final acceptsRanges = probe.acceptsRanges;
     _chunks =
         _meta.chunks.map((snap) => _buildChunk(snap, acceptsRanges)).toList();
-    _chunkSeq = _chunkSeq > _chunks.length ? _chunkSeq : _chunks.length;
+    // Restored/custom layouts can have sparse numeric suffixes. Chunk count
+    // alone is not an ID allocator: c2/c3 with two chunks must allocate c4.
+    final prefix = '$id-c';
+    for (final chunk in _chunks) {
+      if (!chunk.id.startsWith(prefix)) continue;
+      final suffix = int.tryParse(chunk.id.substring(prefix.length));
+      if (suffix != null && suffix >= _chunkSeq) _chunkSeq = suffix + 1;
+    }
   }
 
   Chunk _buildChunk(ChunkSnapshot snap, bool acceptsRanges) {
