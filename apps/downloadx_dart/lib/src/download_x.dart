@@ -253,6 +253,9 @@ class DownloadX implements DlxContext {
       _baseConfig.requestTimeout ?? DefaultConfig.requestTimeout;
 
   @override
+  int get metaPersistInterval => _baseConfig.metaPersistInterval ?? 1000;
+
+  @override
   Throttle get sharedThrottle => _sharedThrottle;
 
   /// Returns the current effective global config as a JSON-compatible map.
@@ -263,6 +266,7 @@ class DownloadX implements DlxContext {
         'speedLimit': _sharedThrottle.capacityBytesPerSec,
         'targetChunkCount': targetChunkCount,
         'minChunkSize': minChunkSize,
+        'metaPersistInterval': metaPersistInterval,
         'maxRetries': maxRetries,
         'retryDelay': retryDelay,
         'retryBackoff': retryBackoff,

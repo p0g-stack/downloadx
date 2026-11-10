@@ -34,6 +34,9 @@ class Download implements GlobalConfig {
   bool _pauseRequested = false;
   bool _cancelRequested = false;
   Timer? _progressTimer;
+  Timer? _metaPersistTimer;
+  bool _metaTickPending = false;
+  Future<void> _metaTail = Future<void>.value();
   int _startedAt = 0;
   int _chunkSeq = 0;
   bool _rangeFallbackDone = false;
@@ -79,6 +82,8 @@ class Download implements GlobalConfig {
   int get minChunkSize => _meta.minChunkSize ?? _context.minChunkSize;
   @override
   bool get journal => _meta.journal ?? _context.journal;
+  @override
+  int get metaPersistInterval => _context.metaPersistInterval;
 
   // ------------------------------------------------------------------------
 
@@ -952,6 +957,16 @@ class Download implements GlobalConfig {
       _emitProgress();
       _recoverStalledChunks();
     });
+    final interval = metaPersistInterval;
+    if (interval > 0) {
+      _metaPersistTimer = Timer.periodic(Duration(milliseconds: interval), (_) {
+        if (_metaTickPending) return;
+        _metaTickPending = true;
+        _persistCurrentMeta().catchError((Object error) {
+          _diag('warn', 'meta-persist-failed', '$error');
+        }).whenComplete(() => _metaTickPending = false);
+      });
+    }
   }
 
   void _recoverStalledChunks() {
@@ -975,6 +990,8 @@ class Download implements GlobalConfig {
   }
 
   void _stopProgressTimer() {
+    _metaPersistTimer?.cancel();
+    _metaPersistTimer = null;
     if (_progressTimer != null) {
       _progressTimer!.cancel();
       _progressTimer = null;
@@ -1058,10 +1075,16 @@ class Download implements GlobalConfig {
     append(_journalPath(), line).catchError((_) {});
   }
 
-  Future<void> _persistCurrentMeta() async {
-    _meta.state = dehydrateState(_state);
-    if (_chunks.isNotEmpty) _meta.chunks = getChunkSnapshots();
-    await persistMeta(io, MetaLocator(dir: cachePath, id: id), _meta);
+  Future<void> _persistCurrentMeta() {
+    // Timer, chunk completion, pause and finalization share one temporary
+    // filename. Serialize the complete write+rename, not just each I/O call.
+    final result = _metaTail.then((_) async {
+      _meta.state = dehydrateState(_state);
+      if (_chunks.isNotEmpty) _meta.chunks = getChunkSnapshots();
+      await persistMeta(io, MetaLocator(dir: cachePath, id: id), _meta);
+    });
+    _metaTail = result.then<void>((_) {}, onError: (Object _, StackTrace _) {});
+    return result;
   }
 
   Future<void> _safeUnlink(String path) async {

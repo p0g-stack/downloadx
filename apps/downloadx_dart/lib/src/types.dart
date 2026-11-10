@@ -182,6 +182,10 @@ class DownloadXConfig {
   /// request duration — long downloads are unaffected while data flows.
   int? requestTimeout;
 
+  /// Persist progress during long-running chunks every this many milliseconds.
+  /// Defaults to 1000; zero disables periodic persistence.
+  int? metaPersistInterval;
+
   /// Write an NDJSON journal sidecar recording retries, splits, timeouts, and
   /// state changes.
   bool? journal;
@@ -201,6 +205,7 @@ class DownloadXConfig {
     this.speedLimit,
     this.headers,
     this.requestTimeout,
+    this.metaPersistInterval,
     this.journal,
   });
 }

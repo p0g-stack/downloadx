@@ -74,6 +74,8 @@ class _MockContext implements DlxContext {
   @override
   bool get journal => _base.journal;
   @override
+  int get metaPersistInterval => _base.metaPersistInterval;
+  @override
   Throttle get sharedThrottle => _base.sharedThrottle;
   @override
   int get maxRetries => _base.maxRetries;

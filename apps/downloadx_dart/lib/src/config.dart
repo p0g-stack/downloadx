@@ -51,6 +51,9 @@ abstract class GlobalConfig extends DownloadConfig {
   /// Whether NDJSON diagnostic journal writing is enabled.
   bool get journal;
 
+  /// Interval in milliseconds for progress sidecars; zero disables the timer.
+  int get metaPersistInterval;
+
   /// Manager-wide bandwidth cap shared by all downloads.
   Throttle get sharedThrottle;
 }
