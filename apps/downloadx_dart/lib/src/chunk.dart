@@ -342,6 +342,11 @@ class Chunk {
         throw RangeNotHonoredError();
       }
       await _consumeBody(res, controller, armIdle, clearIdle);
+      if (_status == ChunkStatus.downloading &&
+          _length != unknownSizeLength &&
+          _downloadedBytes < _length) {
+        throw StateError('response ended early: downloaded $_downloadedBytes of $_length bytes');
+      }
     } finally {
       clearIdle();
     }
