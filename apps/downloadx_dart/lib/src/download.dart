@@ -245,7 +245,7 @@ class Download implements GlobalConfig {
     _meta.speedLimit = bytesPerSec;
   }
 
-  /// Upper bound on live chunks; takes effect on the next split decision.
+  /// Limit future chunk starts and split decisions. Active requests finish.
   void setTargetChunkCount(int? n) => _meta.targetChunkCount = n;
 
   /// Override the target directory for this download's final file.
@@ -663,21 +663,16 @@ class Download implements GlobalConfig {
       runners[chunk.id] = chunk.run().whenComplete(() => done.add(chunk.id));
     }
 
-    // HLS segment downloads can have hundreds of chunks; cap how many run at
-    // once so we don't fire one request per segment. The cap is the configured
-    // target chunk count. Normal (non-segment) downloads keep their existing
-    // behaviour — every planned chunk launches immediately and the dynamic
-    // splitter grows them up to targetChunkCount.
-    final segmentMode = _chunks.any((c) => c.isSegment);
-    final concurrency = segmentMode
-        ? (options.targetChunkCount ?? targetChunkCount).clamp(1, 1 << 30)
-        : (1 << 30);
-
     // Launch up to `concurrency` chunks; the rest wait until a slot frees up.
     // A chunk is launchable when it isn't finished and isn't already running.
     // (On resume, chunks may be `paused`, not `pending`, so don't filter on
     // `pending` alone — that would skip resumable chunks.)
     void launchPending() {
+      // Restored normal layouts may contain more unfinished chunks than the
+      // current target. Leave overflow chunks unstarted: their network idle
+      // timers must not run while waiting for an application/browser slot.
+      final concurrency =
+          (options.targetChunkCount ?? targetChunkCount).clamp(1, 1 << 30);
       for (final c in _chunks) {
         if (runners.length >= concurrency) break;
         if (c.status == ChunkStatus.completed ||
@@ -747,11 +742,9 @@ class Download implements GlobalConfig {
           '${candidate.chunk.id} donated ${candidate.newRange.length} bytes at ${candidate.newRange.offset} to ${newChunk.id}',
           newChunk.id,
         );
-        launch(newChunk);
       }
 
-      // Fill any freed slots with still-pending chunks (segment mode). No-op
-      // for normal downloads, where every chunk launched up front.
+      // Restored, newly planned and donated chunks share the same live cap.
       launchPending();
 
       await _persistCurrentMeta().catchError((_) {});
